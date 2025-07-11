@@ -1,4 +1,4 @@
-name: Deploy to Prodaction
+name: Deploy to Production
 
 on:
   workflow_dispatch:
@@ -9,15 +9,12 @@ on:
 
 env:
   REGISTRY: cr.yandex/${{ secrets.REGISTRY_ID }}/app
-  LATEST_TAG: ${{ github.event.inputs.release_version }}_latest
-  IMAGE: cr.yandex/${{ secrets.REGISTRY_ID }}/app:${{ github.event.inputs.release_version }}_latest
 
 jobs:
   check_image:
     runs-on: ubuntu-latest
     steps:
-      - name: Create IAM token from JSON key and check image exists
-        id: check
+      - name: Create IAM token and check image exists
         run: |
           echo '${{ secrets.YC_SA_JSON }}' > key.json
 
@@ -25,21 +22,19 @@ jobs:
             -H "Content-Type: application/json" \
             -d @key.json | jq -r '.iamToken')
 
-          LATEST_TAG="${{ env.LATEST_TAG }}"
-          IMAGE="${{ env.REGISTRY }}:$LATEST_TAG"
+          VERSION="${{ github.event.inputs.release_version }}"
+          IMAGE="$REGISTRY:${VERSION}_latest"
 
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $IAM_TOKEN" \
-            "https://container-registry.api.cloud.yandex.net/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/$LATEST_TAG")
+            "https://container-registry.api.cloud.yandex.net/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/${VERSION}_latest")
 
           if [[ "$CODE" != "200" ]]; then
-            echo "Image $IMAGE does not exist in Yandex Container Registry"
+            echo "❌ Image $IMAGE does not exist in Yandex Container Registry"
             exit 1
           fi
 
-          echo "Image $IMAGE exists"
-        env:
-          LATEST_TAG: ${{ env.RELEASE_VERSION }}_latest
+          echo "✅ Image $IMAGE exists"
 
   deploy:
     needs: check_image
@@ -52,13 +47,16 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.PROD_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to Production Server
+      - name: Deploy to production server
         run: |
+          VERSION="${{ github.event.inputs.release_version }}"
+          IMAGE="$REGISTRY:${VERSION}_latest"
+
           ssh -i ~/.ssh/id_ed25519 ${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }} <<EOF
-          docker pull $IMAGE
-          docker stop app || true
-          docker rm app || true
-          docker run -d --name app -p 80:3000 $IMAGE
+            docker pull $IMAGE
+            docker stop app || true
+            docker rm app || true
+            docker run -d --name app -p 80:3000 $IMAGE
           EOF
 
   comment_issue:
@@ -67,12 +65,12 @@ jobs:
     steps:
       - name: Add comment to issue
         run: |
+          VERSION="${{ github.event.inputs.release_version }}"
+          IMAGE="$REGISTRY:${VERSION}_latest"
           DATE=$(date +'%Y-%m-%d')
           AUTHOR=${{ github.actor }}
-          VERSION=${{ github.event.inputs.release_version }}
-          IMAGE=$IMAGE
 
-          BODY="Релиз v${VERSION} выкачан в прод\n\n- Date: ${DATE}\n- Author: ${AUTHOR}\n- Docker: \`${IMAGE}\`"
+          BODY="Релиз v${VERSION} выкачан в прод\n\n- Дата: ${DATE}\n- Автор: ${AUTHOR}\n- Docker: \`${IMAGE}\`"
 
           ISSUE_ID=$(gh issue list --state open --search "Release v${VERSION}" --json number --jq '.[0].number')
           gh issue comment "$ISSUE_ID" --body "$BODY"
