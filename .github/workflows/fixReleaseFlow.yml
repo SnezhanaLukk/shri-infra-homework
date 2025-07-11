@@ -137,13 +137,14 @@ jobs:
           COMMITS=$(echo "${{ steps.changelog.outputs.COMMITS }}" | sed 's/^/- /')
 
           cat <<EOF > body.md
-          ### Фикс v${VERSION} (${FIX})
+          ### Fix for Release v${VERSION} (${FIX})
           - Дата: ${DATE}
           - Автор: ${AUTHOR}
           - Docker: \`${IMAGE}\`
 
           #### Коммиты:
-          ${COMMITS}"
+          ${COMMITS}
+          EOF
 
           ISSUE_ID=$(gh issue list --state open --search "Release v${VERSION}" --json number --jq '.[0].number')
           gh issue comment "$ISSUE_ID" --body "$BODY"
