@@ -97,7 +97,7 @@ jobs:
           git checkout releases/${{ steps.version.outputs.VERSION }}
           git add CHANGELOG.md
           git commit -m "chore: update changelog for v${{ steps.version.outputs.VERSION }}"
-          git push
+          git push --set-upstream origin releases/${{ steps.version.outputs.VERSION }}
 
       - name: Prepare release issue file
         run: |
