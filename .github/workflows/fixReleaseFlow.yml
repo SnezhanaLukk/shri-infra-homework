@@ -20,9 +20,23 @@ jobs:
       release_version: ${{ steps.extract.outputs.release_version }}
       fix_number: ${{ github.run_number }}
     steps:
-      - id: extract
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ensure release branch exists
         run: |
-          echo "release_version=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
+          VERSION=${{ github.event.inputs.release_version }}
+          BRANCH=releases/$VERSION
+          git fetch origin
+          if ! git ls-remote --exit-code --heads origin $BRANCH; then
+            git checkout -b $BRANCH
+            git push origin $BRANCH
+          fi
+
+      - id: extract
+        run: echo "release_version=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
 
   typecheck:
     runs-on: ubuntu-latest
@@ -88,7 +102,7 @@ jobs:
       - name: Checkout release branch
         uses: actions/checkout@v4
         with:
-          ref: releases/${{ env.RELEASE_BRANCH }}
+          ref: ${{ env.RELEASE_BRANCH }}
           fetch-depth: 0
 
       - name: Set up Git identity
