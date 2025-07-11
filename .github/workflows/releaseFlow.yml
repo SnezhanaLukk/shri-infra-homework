@@ -1,0 +1,126 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run test
+
+  release:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version number
+        id: version
+        run: echo "VERSION=${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Create release branch
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git checkout -b releases/${{ steps.version.outputs.VERSION }}
+          git push origin releases/${{ steps.version.outputs.VERSION }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }} .
+          docker tag cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }} \
+                     cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }}_latest
+
+      - name: Login to Yandex CR
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-id: ${{ secrets.YC_SA_ID }}
+
+      - name: Push Docker image
+        run: |
+          docker push cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }}
+          docker push cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }}_latest
+
+      - name: Create and push git tag
+        run: |
+          git fetch origin main --depth=1
+          git checkout main
+          git tag -a v${{ steps.version.outputs.VERSION }} -m "Release v${{ steps.version.outputs.VERSION }}"
+          git push origin v${{ steps.version.outputs.VERSION }}
+
+      - name: Get commit log since previous tag
+        id: commits
+        run: |
+          git fetch --tags
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            LOG=$(git log --oneline)
+          else
+            LOG=$(git log $PREV_TAG..HEAD --oneline)
+          fi
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG.md
+        run: |
+          DATE=$(date -u +'%Y-%m-%d')
+          VERSION=${{ steps.version.outputs.VERSION }}
+          COMMITS="${{ steps.commits.outputs.COMMITS }}"
+          echo -e "## v$VERSION - $DATE\n\n$COMMITS\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+
+      - name: Commit and push CHANGELOG.md
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git checkout releases/${{ steps.version.outputs.VERSION }}
+          git add CHANGELOG.md
+          git commit -m "chore: update changelog for v${{ steps.version.outputs.VERSION }}"
+          git push
+
+      - name: Prepare release issue file
+        run: |
+          DATE=$(date -u +'%Y-%m-%d')
+          VERSION=${{ steps.version.outputs.VERSION }}
+          AUTHOR=${{ github.actor }}
+          REGISTRY="cr.yandex/${{ secrets.CR_ID }}/app:$VERSION"
+          COMMITS="${{ steps.commits.outputs.COMMITS }}"
+          echo "## Release v$VERSION" > release_info.md
+          echo "Date: $DATE" >> release_info.md
+          echo "Author: $AUTHOR" >> release_info.md
+          echo "Version: $VERSION" >> release_info.md
+          echo "Docker image: \`$REGISTRY\`" >> release_info.md
+          echo "" >> release_info.md
+          echo "### Commits:" >> release_info.md
+          echo "\`\`\`" >> release_info.md
+          echo "$COMMITS" >> release_info.md
+          echo "\`\`\`" >> release_info.md
+
+      - name: Create GitHub issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Release v${{ steps.version.outputs.VERSION }}"
+          content-filepath: release_info.md
+
+      - name: Cleanup
+        run: rm release_info.md
