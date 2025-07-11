@@ -138,8 +138,8 @@ jobs:
 
           cat <<EOF > body.md
           ### Fix for Release v${VERSION} (${FIX})
-          - Дата: ${DATE}
-          - Автор: ${AUTHOR}
+          - Date: ${DATE}
+          - Author: ${AUTHOR}
           - Docker: \`${IMAGE}\`
 
           #### Коммиты:
@@ -147,6 +147,6 @@ jobs:
           EOF
 
           ISSUE_ID=$(gh issue list --state open --search "Release v${VERSION}" --json number --jq '.[0].number')
-          gh issue comment "$ISSUE_ID" --body "$BODY"
+          gh issue comment "$ISSUE_ID" --body-file body.md
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
