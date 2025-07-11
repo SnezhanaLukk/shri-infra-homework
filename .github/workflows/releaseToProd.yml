@@ -1,0 +1,60 @@
+name: Deploy to Prodaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Номер релиза"
+        required: true
+
+env:
+  REGISTRY: cr.yandex/${{secrets.REGISTRY_ID}}/app
+  RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+  LATEST_TAG: ${{ github.event.inputs.release_version }}_latest
+
+jobs:
+  check_image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if image exists in Container Registry
+        run: |
+          IMAGE="$REGISTRY:$LATEST_TAG"
+          TOKEN=$(yc iam create-token)
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://container-registry.api.cloud.yandex.net/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/$LATEST_TAG")
+
+          if [[ "$CODE" != "200" ]]; then
+            echo "Image $IMAGE does not exist in Yandex CR"
+            exit 1
+          fi
+  deploy:
+    needs: check_image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            docker pull $REGISTRY:$LATEST_TAG
+            docker stop app || true
+            docker rm app || true
+            docker run -d --name app -p 80:3000 $REGISTRY:$LATEST_TAG
+
+  comment_issue:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add comment to release issue
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          VERSION=${{ env.RELEASE_VERSION }}
+          AUTHOR=${{ github.actor }}
+          BODY="🚀 Прод выкатка релиза v$VERSION\n\n- Дата: $DATE\n- Автор: $AUTHOR"
+          ISSUE_ID=$(gh issue list --state open --search "Release v$VERSION" --json number --jq '.[0].number')
+          gh issue comment "$ISSUE_ID" --body "$BODY"
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
