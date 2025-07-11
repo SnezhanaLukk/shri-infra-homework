@@ -27,14 +27,14 @@ jobs:
 
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $IAM_TOKEN" \
-            "https://container-registry.api.cloud.yandex.net/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/${VERSION}_latest")
+            "https://container-registry.api.cloud.yandex.net/container-registry/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/${VERSION}_latest")
 
           if [[ "$CODE" != "200" ]]; then
-            echo "❌ Image $IMAGE does not exist in Yandex Container Registry"
+            echo "Image $IMAGE does not exist in Yandex Container Registry"
             exit 1
           fi
 
-          echo "✅ Image $IMAGE exists"
+          echo "Image $IMAGE exists"
 
   deploy:
     needs: check_image
