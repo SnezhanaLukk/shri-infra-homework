@@ -56,6 +56,7 @@ jobs:
         with:
           yc-sa-id: ${{ secrets.YC_SA_JSON }}
 
+
       - name: Push Docker image
         run: |
           docker push cr.yandex/${{ secrets.CR_ID }}/app:${{ steps.version.outputs.VERSION }}
