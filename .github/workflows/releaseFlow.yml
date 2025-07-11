@@ -54,7 +54,8 @@ jobs:
       - name: Login to Yandex CR
         uses: yc-actions/yc-cr-login@v3
         with:
-          yc-sa-id: ${{ secrets.YC_SA_ID }}
+          yc-sa-id: ${{ secrets.YC_SA_JSON }}
+
 
       - name: Push Docker image
         run: |
