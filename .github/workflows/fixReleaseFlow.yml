@@ -117,20 +117,20 @@ jobs:
           git tag v${VERSION}_${FIX}
           git push origin v${VERSION}_${FIX}
 
-     
       - name: Get commits since last release/fix tag
         id: changelog
         run: |
           git fetch --tags
-          LAST_TAG=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$" | head -n 1 || true)
 
-          if [ -n "$LAST_TAG" ]; then
-            git log "$LAST_TAG"..HEAD --oneline --no-decorate > commits.txt
+          TAGS=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$")
+          CURRENT_TAG=$(echo "$TAGS" | head -n 1)
+          PREVIOUS_TAG=$(echo "$TAGS" | sed -n 2p)
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            git log "$PREVIOUS_TAG"..HEAD --oneline --no-decorate > commits.txt
           else
             git log --oneline --no-decorate > commits.txt
           fi
-
-     
       
       - name: Prepare fix comment file
         run: |
