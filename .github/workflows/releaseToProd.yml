@@ -30,10 +30,12 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.release_version }}"
           TAG="${VERSION}_latest"
-          IMAGE_NAME="cr.yandex/${{ secrets.CR_ID }}/app"
 
-          EXISTS=$(yc container image list --repository-name "${IMAGE_NAME}" --format json | jq -r '.[].tags[]' | grep -Fx "${TAG}" || true)
+          REPOSITORIES=$(yc container repository list --format json)
+          echo "Available repositories: $REPOSITORIES"
 
+          IMAGE_EXISTS=$(yc container image list --repository-name ${{ secrets.CR_ID }}/app --format json | jq -r ".[] | select(.tags[] == \"$TAG\") | .id")
+          
           if [ -z "$EXISTS" ]; then
             echo "::error::Image ${IMAGE_NAME}:${TAG} does not exist in Container Registry"
             exit 1
