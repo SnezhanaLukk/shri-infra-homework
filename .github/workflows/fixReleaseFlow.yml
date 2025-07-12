@@ -8,7 +8,7 @@ on:
         required: true
 
 env:
-  REGISTRY: cr.yandex/${{ secrets.REGISTRY_ID }}/app
+  REGISTRY: cr.yandex/${{ secrets.CR_ID }}/app
   RELEASE_VERSION: ${{ github.event.inputs.release_version }}
   FIX_TAG: fix${{ github.run_number }}
   RELEASE_BRANCH: releases/${{ github.event.inputs.release_version }}
