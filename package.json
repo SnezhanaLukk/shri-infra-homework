@@ -4,7 +4,7 @@
   "scripts": {
     "start": "nodemon ./src/server/index.ts",
     "start:prod": "node dist/main.js",
-    "start:docker": "docker run -p 3000:3000 --rm shri-infra",
+    "start:docker": "docker run -i -p 3000:3000/tcp -t shri-infra",
 
     "build": "webpack --mode=production --node-env=production",
     "build:server": "tsc --project tsconfig.server.json",
