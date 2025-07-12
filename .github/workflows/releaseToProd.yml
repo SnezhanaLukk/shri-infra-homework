@@ -32,7 +32,7 @@ jobs:
 
       - name: Check if image with tag exists
         run: |
-          REPO_PATH = "${{secrets.CR_ID}}/app"
+          REPO_PATH="${{secrets.CR_ID}}/app"
           TAG="${{ github.event.inputs.release_version }}_latest"
 
           EXISTS=$(yc container image list \
