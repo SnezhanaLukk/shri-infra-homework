@@ -8,40 +8,39 @@ on:
         required: true
 
 env:
-  REGISTRY: cr.yandex/${{ secrets.REGISTRY_ID }}/app
+  REGISTRY: cr.yandex/${{ secrets.CR_ID }}/app
 
 jobs:
   check_image:
     runs-on: ubuntu-latest
     steps:
-
-      - name: Save SA JSON key
-        run: echo '${{ secrets.YC_SA_JSON }}' > key.json
-
-      - name: Get IAM token
-        id: token
+      - name: Install Yandex Cloud CLI
         run: |
-          IAM_TOKEN=$(curl -s -X POST https://iam.api.cloud.yandex.net/iam/v1/tokens \
-            -H "Content-Type: application/json" \
-            -d @key.json | jq -r '.iamToken')
-          echo "token=$IAM_TOKEN" >> $GITHUB_OUTPUT
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
 
-      - name: Check if tag exists
+      - name: Authenticate with service account
+        run: |
+          echo '${{ secrets.YC_SA_JSON }}' > key.json
+          yc config set service-account-key key.json
+          yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
+          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+
+      - name: Check if image tag exists
         run: |
           VERSION="${{ github.event.inputs.release_version }}"
           TAG="${VERSION}_latest"
-          IAM_TOKEN="${{ steps.token.outputs.token }}"
-    
-          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $IAM_TOKEN" \
-            "https://container-registry.api.cloud.yandex.net/container-registry/v1/images/$REGISTRY:$TAG")
-    
-          if [ "$STATUS_CODE" != "200" ]; then
-            echo "::error::Image $REGISTRY:$TAG does not exist in Yandex Container Registry (HTTP $STATUS_CODE)"
+          IMAGE_NAME="cr.yandex/${{ secrets.CR_ID }}/app"
+
+          EXISTS=$(yc container image list --repository-name "${IMAGE_NAME}" --format json | jq -r '.[].tags[]' | grep -Fx "${TAG}" || true)
+
+          if [ -z "$EXISTS" ]; then
+            echo "::error::Image ${IMAGE_NAME}:${TAG} does not exist in Container Registry"
             exit 1
+          else
+            echo "Image ${IMAGE_NAME}:${TAG} exists"
           fi
-    
-          echo "Image $REGISTRY:$TAG exists"
+
       - name: Cleanup
         if: always()
         run: rm -f key.json
