@@ -32,7 +32,6 @@ jobs:
           TAG="${VERSION}_latest"
           IAM_TOKEN="${{ steps.token.outputs.token }}"
     
-          # Проверяем существование конкретного образа с тегом
           STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $IAM_TOKEN" \
             "https://container-registry.api.cloud.yandex.net/container-registry/v1/images/$REGISTRY:$TAG")
