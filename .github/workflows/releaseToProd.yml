@@ -14,27 +14,37 @@ jobs:
   check_image:
     runs-on: ubuntu-latest
     steps:
-      - name: Create IAM token and check image exists
-        run: |
-          echo '${{ secrets.YC_SA_JSON }}' > key.json
 
+      - name: Save SA JSON key
+        run: echo '${{ secrets.YC_SA_JSON }}' > key.json
+
+      - name: Get IAM token
+        id: token
+        run: |
           IAM_TOKEN=$(curl -s -X POST https://iam.api.cloud.yandex.net/iam/v1/tokens \
             -H "Content-Type: application/json" \
             -d @key.json | jq -r '.iamToken')
+          echo "token=$IAM_TOKEN" >> $GITHUB_OUTPUT
 
+      - name: Check if tag exists
+        run: |
           VERSION="${{ github.event.inputs.release_version }}"
-          IMAGE="$REGISTRY:${VERSION}_latest"
+          TAG="${VERSION}_latest"
+          IAM_TOKEN="${{ steps.token.outputs.token }}"
 
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $IAM_TOKEN" \
-            "https://container-registry.api.cloud.yandex.net/container-registry/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags/${VERSION}_latest")
+          TAGS=$(curl -s -H "Authorization: Bearer $IAM_TOKEN" \
+            "https://container-registry.api.cloud.yandex.net/container-registry/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags" \
+            | jq -r '.tags[].name')
 
-          if [[ "$CODE" != "200" ]]; then
-            echo "Image $IMAGE does not exist in Yandex Container Registry"
+          echo "Available tags: $TAGS"
+
+          if ! echo "$TAGS" | grep -q "$TAG"; then
+            echo "Image $REGISTRY:$TAG does not exist in Yandex Container Registry"
             exit 1
           fi
 
-          echo "Image $IMAGE exists"
+          echo "Image $REGISTRY:$TAG exists"
+
 
   deploy:
     needs: check_image
