@@ -1,0 +1,157 @@
+name: Fix Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Номер релиза"
+        required: true
+
+env:
+  REGISTRY: cr.yandex/${{ secrets.CR_ID }}/app
+  RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+  FIX_TAG: fix${{ github.run_number }}
+  RELEASE_BRANCH: releases/${{ github.event.inputs.release_version }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_version: ${{ steps.extract.outputs.release_version }}
+      fix_number: ${{ github.run_number }}
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Ensure release branch exists
+        run: |
+          VERSION=${{ github.event.inputs.release_version }}
+          BRANCH=releases/$VERSION
+          git fetch origin
+          if ! git ls-remote --exit-code --heads origin $BRANCH; then
+            git checkout -b $BRANCH
+            git push origin $BRANCH
+          fi
+
+      - id: extract
+        run: echo "release_version=${{ github.event.inputs.release_version }}" >> $GITHUB_OUTPUT
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: releases/${{ github.event.inputs.release_version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: releases/${{ github.event.inputs.release_version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run test
+
+  build_and_push:
+    needs: [prepare, typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          ref: releases/${{ github.event.inputs.release_version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+
+      - name: Login to Yandex Cloud Container Registry
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON }}
+
+      - name: Build and push Docker image
+        run: |
+          VERSION=${{ env.RELEASE_VERSION }}
+          FIX=${{ github.run_number }}
+          IMAGE=$REGISTRY:${VERSION}_fix${FIX}
+          LATEST=$REGISTRY:${VERSION}_latest
+
+          docker build -t $IMAGE .
+          docker tag $IMAGE $LATEST
+
+          docker push $IMAGE
+          docker push $LATEST
+
+  tag_and_comment:
+    needs: [prepare, build_and_push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_BRANCH }}
+          fetch-depth: 0
+
+      - name: Set up Git identity
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Create and push git tag
+        run: |
+          VERSION=${{ env.RELEASE_VERSION }}
+          FIX=fix${{ github.run_number }}
+          git tag v${VERSION}_${FIX}
+          git push origin v${VERSION}_${FIX}
+
+      - name: Get commits since last release/fix tag
+        id: changelog
+        run: |
+          git fetch --tags
+          LAST_TAG=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$" | head -n 1)
+          COMMITS=$(git log $LAST_TAG..HEAD --oneline --no-decorate)
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Prepare fix comment file
+        run: |
+          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
+          VERSION=${{ env.RELEASE_VERSION }}
+          FIX=fix${{ github.run_number }}
+          AUTHOR=${{ github.actor }}
+          IMAGE=$REGISTRY:${VERSION}_${FIX}
+          COMMITS="${{ steps.changelog.outputs.COMMITS }}"
+
+          echo "### Fix for Release v${VERSION} (${FIX})" > body.md
+          echo "- Date: ${DATE}" >> body.md
+          echo "- Author: ${AUTHOR}" >> body.md
+          echo "- Docker: \`${IMAGE}\`" >> body.md
+          echo "" >> body.md
+          echo "#### Коммиты:" >> body.md
+          echo "\`\`\`" >> body.md
+          echo "$COMMITS" | sed 's/^/- /' >> body.md
+          echo "\`\`\`" >> body.md
+
+      - name: Add comment to release issue
+        run: |
+          ISSUE_ID=$(gh issue list --state open --search "Release v${{ env.RELEASE_VERSION }}" --json number --jq '.[0].number')
+          gh issue comment "$ISSUE_ID" --body-file body.md
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Cleanup comment file
+        run: rm body.md

@@ -54,7 +54,8 @@ jobs:
       - name: Login to Yandex CR
         uses: yc-actions/yc-cr-login@v3
         with:
-          yc-sa-id: ${{ secrets.YC_SA_JSON }}
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON }}
+
 
       - name: Push Docker image
         run: |
@@ -96,7 +97,7 @@ jobs:
           git checkout releases/${{ steps.version.outputs.VERSION }}
           git add CHANGELOG.md
           git commit -m "chore: update changelog for v${{ steps.version.outputs.VERSION }}"
-          git push
+          git push --set-upstream origin releases/${{ steps.version.outputs.VERSION }}
 
       - name: Prepare release issue file
         run: |

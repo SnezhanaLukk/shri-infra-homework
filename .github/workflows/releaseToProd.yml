@@ -1,0 +1,111 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Версия релиза"
+        required: true
+
+env:
+  REGISTRY: cr.yandex/${{secrets.CR_ID}}/app
+  RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+  IMAGE_TAG: ${{github.event.inputs.release_version}}_latest
+  IMAGE: cr.yandex/${{ secrets.CR_ID }}/app:${{ github.event.inputs.release_version }}_latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH 
+
+      - name: Authenticate with Yandex Cloud
+        run: |
+          echo '${{secrets.YC_SA_JSON}}' > key.json
+          yc config set service-account-key key.json
+          yc config set cloud-id ${{secrets.YC_CLOUD_ID}}
+          yc config set folder-id ${{secrets.YC_FOLDER_ID}}
+
+      - name: Check if image with tag exists
+        run: |
+          REPO_PATH="${{secrets.CR_ID}}/app"
+          TAG="${{ github.event.inputs.release_version }}_latest"
+
+          EXISTS=$(yc container image list \
+            --repository-name $REPO_PATH \
+            --format json | jq -r '.[].tags[]' | grep -x "$TAG" || true)
+
+          if [ -z "$EXISTS" ]; then
+            echo "::error::Image cr.yandex/${{ secrets.CR_ID }}/app:$TAG does not exist in Container Registry"
+            exit 1
+          else
+            echo "Image cr.yandex/${{ secrets.CR_ID }}/app:$TAG exists"
+          fi
+          
+      - name: CleanUp
+        if: always()
+        run: rm -f key.json
+
+      - name: Deploy to VM via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          script: |
+            TAG="${{ github.event.inputs.release_version }}_latest"
+            IMAGE="cr.yandex/${{ secrets.CR_ID }}/app:$TAG"
+
+            echo "Pulling image: $IMAGE"
+            docker pull $IMAGE
+
+            echo "Stopping and removing old container (if any)..."
+            docker stop app || true
+            docker rm app || true
+
+            echo "Running new container"
+            docker run -d --name app -p 80:3000 $IMAGE
+
+            echo "Cleaning up old containers/images"
+            docker container prune -f
+            docker image prune -a -f
+
+  comment_issue:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare release comment file
+        run: |
+          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
+          VERSION=${{ github.event.inputs.release_version }}
+          AUTHOR=${{ github.actor }}
+          DOCKER_IMAGE="cr.yandex/${{ secrets.CR_ID }}/app:${VERSION}_latest"
+          
+          echo "### Release v${VERSION} in production" > comment.md
+          echo "- Date: ${DATE}" >> comment.md
+          echo "- Author: ${AUTHOR}" >> comment.md
+          echo "- Docker image: \`${DOCKER_IMAGE}\`" >> comment.md
+
+      - name: Find and comment release issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "🔍 Ищем Issue с заголовком 'Release v${{ github.event.inputs.release_version }}'..."
+          ISSUE_ID=$(gh issue list --state open --search "Release v${{ github.event.inputs.release_version }}" --json number --jq '.[0].number')
+
+          if [ -n "$ISSUE_ID" ]; then
+            echo "Публикуем комментарий в Issue #$ISSUE_ID"
+            gh issue comment "$ISSUE_ID" --body-file comment.md
+          else
+            echo "::warning::Issue с заголовком 'Release v${{ github.event.inputs.release_version }}' не найден"
+          fi
+
+      - name: Cleanup comment file
+        run: rm -f comment.md
