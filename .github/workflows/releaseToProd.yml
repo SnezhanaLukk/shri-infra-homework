@@ -31,20 +31,21 @@ jobs:
           VERSION="${{ github.event.inputs.release_version }}"
           TAG="${VERSION}_latest"
           IAM_TOKEN="${{ steps.token.outputs.token }}"
-
-          TAGS=$(curl -s -H "Authorization: Bearer $IAM_TOKEN" \
-            "https://container-registry.api.cloud.yandex.net/container-registry/v1/repositories/${{ secrets.REGISTRY_ID }}/app/tags" \
-            | jq -r '.tags[].name')
-
-          echo "Available tags: $TAGS"
-
-          if ! echo "$TAGS" | grep -q "$TAG"; then
-            echo "Image $REGISTRY:$TAG does not exist in Yandex Container Registry"
+    
+          # Проверяем существование конкретного образа с тегом
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $IAM_TOKEN" \
+            "https://container-registry.api.cloud.yandex.net/container-registry/v1/images/$REGISTRY:$TAG")
+    
+          if [ "$STATUS_CODE" != "200" ]; then
+            echo "::error::Image $REGISTRY:$TAG does not exist in Yandex Container Registry (HTTP $STATUS_CODE)"
             exit 1
           fi
-
+    
           echo "Image $REGISTRY:$TAG exists"
-
+      - name: Cleanup
+        if: always()
+        run: rm -f key.json
 
   deploy:
     needs: check_image
