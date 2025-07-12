@@ -101,11 +101,12 @@ jobs:
 
       - name: Prepare release issue file
         run: |
-          DATE=$(date -u +'%Y-%m-%d')
+          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
           VERSION=${{ steps.version.outputs.VERSION }}
           AUTHOR=${{ github.actor }}
           REGISTRY="cr.yandex/${{ secrets.CR_ID }}/app:$VERSION"
           COMMITS="${{ steps.commits.outputs.COMMITS }}"
+          
           echo "## Release v$VERSION" > release_info.md
           echo "Date: $DATE" >> release_info.md
           echo "Author: $AUTHOR" >> release_info.md
