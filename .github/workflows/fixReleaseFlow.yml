@@ -121,16 +121,9 @@ jobs:
         id: changelog
         run: |
           git fetch --tags
-
-          TAGS=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$")
-          CURRENT_TAG=$(echo "$TAGS" | head -n 1)
-          PREVIOUS_TAG=$(echo "$TAGS" | sed -n 2p)
-
-          if [ -n "$PREVIOUS_TAG" ]; then
-            git log "$PREVIOUS_TAG"..HEAD --oneline --no-decorate > commits.txt
-          else
-            git log --oneline --no-decorate > commits.txt
-          fi
+          LAST_TAG=$(git for-each-ref --sort=-committerdate --format '%(refname:strip=2)' refs/tags \
+            | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$" | head -n 1)
+          git log "$LAST_TAG"..HEAD --oneline --no-decorate > commits.txt
       
       - name: Prepare fix comment file
         run: |
