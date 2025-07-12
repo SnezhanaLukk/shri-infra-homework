@@ -81,22 +81,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Add comment to release issue
+      - name: Prepare release comment file
+        run: |
+          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
+          VERSION=${{ github.event.inputs.release_version }}
+          AUTHOR=${{ github.actor }}
+          DOCKER_IMAGE="cr.yandex/${{ secrets.CR_ID }}/app:${VERSION}_latest"
+          
+          echo "### Release v${VERSION} in production" > comment.md
+          echo "- Date: ${DATE}" >> comment.md
+          echo "- Author: ${AUTHOR}" >> comment.md
+          echo "- Docker image: \`${DOCKER_IMAGE}\`" >> comment.md
+
+      - name: Find and comment release issue
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          VERSION=${{ github.event.inputs.release_version }}
-          IMAGE="cr.yandex/${{ secrets.CR_ID }}/app:${VERSION}_latest"
-          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
-          AUTHOR=${{ github.actor }}
-
-          echo "🔍 Ищем Issue с заголовком 'Release v$VERSION'..."
-          ISSUE_ID=$(gh issue list --state open --search "Release v$VERSION" --json number --jq '.[0].number')
+          echo "🔍 Ищем Issue с заголовком 'Release v${{ github.event.inputs.release_version }}'..."
+          ISSUE_ID=$(gh issue list --state open --search "Release v${{ github.event.inputs.release_version }}" --json number --jq '.[0].number')
 
           if [ -n "$ISSUE_ID" ]; then
-            COMMENT="Релиз \`v${VERSION}\` выкачан в прод\n\n- Дата: ${DATE}\n- Автор: ${AUTHOR}\n- Docker: \`${IMAGE}\`"
             echo "Публикуем комментарий в Issue #$ISSUE_ID"
-            gh issue comment "$ISSUE_ID" --body "$COMMENT"
+            gh issue comment "$ISSUE_ID" --body-file comment.md
           else
-            echo "::warning::Issue с заголовком 'Release v$VERSION' не найден"
+            echo "::warning::Issue с заголовком 'Release v${{ github.event.inputs.release_version }}' не найден"
           fi
+
+      - name: Cleanup comment file
+        run: rm -f comment.md
