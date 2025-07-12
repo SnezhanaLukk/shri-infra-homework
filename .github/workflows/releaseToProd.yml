@@ -33,7 +33,7 @@ jobs:
       - name: Check if image with tag exists
         run: |
           EXISTS=$(yc container image list \
-            --repository-name "${{ env.REGISTRY }}" \
+            --repository-name "app" \
             --format json | jq -r '.[].tags[]' | grep -Fx "${{ env.IMAGE_TAG }}" || true)
 
           if [ -z "$EXISTS" ]; then
