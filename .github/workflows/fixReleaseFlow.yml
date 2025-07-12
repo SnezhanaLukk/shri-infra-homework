@@ -120,10 +120,23 @@ jobs:
       - name: Get commits since last release/fix tag
         id: changelog
         run: |
-          git fetch --tags
-          LAST_TAG=$(git for-each-ref --sort=-committerdate --format '%(refname:strip=2)' refs/tags \
-            | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$" | head -n 1)
-          git log "$LAST_TAG"..HEAD --oneline --no-decorate > commits.txt
+          git fetch origin +refs/heads/*:refs/remotes/origin/*
+
+          CURRENT_RELEASE=origin/releases/${{ env.RELEASE_VERSION }}
+          PREVIOUS_RELEASE=$(git branch -r | grep -E 'origin/releases/' | grep -v "${{ env.RELEASE_VERSION }}" | sort -V | tail -n 1)
+
+          if [ -z "$PREVIOUS_RELEASE" ]; then
+            echo "No previous release found, logging all commits from $CURRENT_RELEASE"
+            git log $CURRENT_RELEASE --oneline --no-decorate > commits.txt
+          else
+            COMMIT_OLD=$(git merge-base origin/main $PREVIOUS_RELEASE)
+            COMMIT_NEW=$(git merge-base origin/main $CURRENT_RELEASE)
+
+            echo "Previous: $PREVIOUS_RELEASE ($COMMIT_OLD)"
+            echo "Current: $CURRENT_RELEASE ($COMMIT_NEW)"
+
+            git log $COMMIT_OLD..$COMMIT_NEW --oneline --no-decorate > commits.txt
+          fi
       
       - name: Prepare fix comment file
         run: |
