@@ -8,82 +8,41 @@ on:
         required: true
 
 env:
-  REGISTRY: cr.yandex/${{ secrets.CR_ID }}/app
+  REGISTRY: cr.yandex/${{secrets.CR_ID}}/app
+  RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+  IMAGE_TAG: ${{github.event.inputs.release_version}}_latest
+  IMAGE: cr.yandex/${{ secrets.CR_ID }}/app:${{ github.event.inputs.release_version }}_latest
 
 jobs:
-  check_image:
+  deploy:
     runs-on: ubuntu-latest
     steps:
+
       - name: Install Yandex Cloud CLI
         run: |
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH
+          echo "${HOME}/yandex-cloud/bin" >> $GITHUB_PATH 
 
-      - name: Authenticate with service account
+      - name: Authenticate with Yandex Cloud
         run: |
-          echo '${{ secrets.YC_SA_JSON }}' > key.json
+          echo '${{secrets.YC_SA_JSON}}' > key.json
           yc config set service-account-key key.json
-          yc config set cloud-id ${{ secrets.YC_CLOUD_ID }}
-          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+          yc config set cloud-id ${{secrets.YC_CLOUD_ID}}
+          yc config set folder-id ${{secrets.YC_FOLDER_ID}}
 
-      - name: Check if image tag exists
+      - name: Check if image with tag exists
         run: |
-          VERSION="${{ github.event.inputs.release_version }}"
-          TAG="${VERSION}_latest"
+          EXISTS=$(yc container image list \
+            --repository-name "${{ env.REGISTRY }}" \
+            --format json | jq -r '.[].tags[]' | grep -Fx "${{ env.IMAGE_TAG }}" || true)
 
-          REPOSITORIES=$(yc container repository list --format json)
-          echo "Available repositories: $REPOSITORIES"
-
-          IMAGE_EXISTS=$(yc container image list --repository-name ${{ secrets.CR_ID }}/app --format json | jq -r ".[] | select(.tags[] == \"$TAG\") | .id")
-          
           if [ -z "$EXISTS" ]; then
-            echo "::error::Image ${IMAGE_NAME}:${TAG} does not exist in Container Registry"
+            echo "::error::Image ${{ env.IMAGE }} does not exist in Container Registry"
             exit 1
           else
-            echo "Image ${IMAGE_NAME}:${TAG} exists"
+            echo "Image ${{ env.IMAGE }} exists"
           fi
 
-      - name: Cleanup
+      - name: CleanUp
         if: always()
         run: rm -f key.json
-
-  deploy:
-    needs: check_image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.PROD_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy to production server
-        run: |
-          VERSION="${{ github.event.inputs.release_version }}"
-          IMAGE="$REGISTRY:${VERSION}_latest"
-
-          ssh -i ~/.ssh/id_ed25519 ${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }} <<EOF
-            docker pull $IMAGE
-            docker stop app || true
-            docker rm app || true
-            docker run -d --name app -p 80:3000 $IMAGE
-          EOF
-
-  comment_issue:
-    needs: deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Add comment to issue
-        run: |
-          VERSION="${{ github.event.inputs.release_version }}"
-          IMAGE="$REGISTRY:${VERSION}_latest"
-          DATE=$(date +'%Y-%m-%d')
-          AUTHOR=${{ github.actor }}
-
-          BODY="Релиз v${VERSION} выкачан в прод\n\n- Дата: ${DATE}\n- Автор: ${AUTHOR}\n- Docker: \`${IMAGE}\`"
-
-          ISSUE_ID=$(gh issue list --state open --search "Release v${VERSION}" --json number --jq '.[0].number')
-          gh issue comment "$ISSUE_ID" --body "$BODY"
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
