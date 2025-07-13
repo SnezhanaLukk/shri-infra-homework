@@ -9,7 +9,9 @@ const app = express();
 app.use(express.json());
 app.use(basename, express.static('dist', { index: false }));
 app.use(basename, router);
-
+app.get(['/', '/index.html'], (req, res) => {
+    res.redirect(basename);
+});
 app.listen(port, '::', () => {
     console.log(`Example app listening at http://localhost:${port}${basename}`);
 });
