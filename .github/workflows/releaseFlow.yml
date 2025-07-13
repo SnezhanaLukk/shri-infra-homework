@@ -69,27 +69,19 @@ jobs:
           git tag -a v${{ steps.version.outputs.VERSION }} -m "Release v${{ steps.version.outputs.VERSION }}"
           git push origin v${{ steps.version.outputs.VERSION }}
 
-      - name: Get commits since previous release
+      - name: Get commit log since previous tag
+        id: commits
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          CURRENT_BRANCH="origin/releases/$VERSION"
-
-          git fetch origin +refs/heads/*:refs/remotes/origin/*
-
-          PREVIOUS_BRANCH=$(git branch -r | grep -E 'origin/releases/' | grep -v "$CURRENT_BRANCH" | sort -V | tail -n 1)
-
-          if [ -z "$PREVIOUS_BRANCH" ]; then
-            echo "No previous release found, logging all commits from $CURRENT_BRANCH"
-            git log $CURRENT_BRANCH --oneline --no-decorate > commits.txt
+          git fetch --tags
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            LOG=$(git log --oneline)
           else
-            COMMIT_OLD=$(git merge-base origin/main $PREVIOUS_BRANCH)
-            COMMIT_NEW=$(git merge-base origin/main $CURRENT_BRANCH)
-
-            echo "Previous: $PREVIOUS_BRANCH ($COMMIT_OLD)"
-            echo "Current: $CURRENT_BRANCH ($COMMIT_NEW)"
-
-            git log $COMMIT_OLD..$COMMIT_NEW --oneline --no-decorate > commits.txt
+            LOG=$(git log $PREV_TAG..HEAD --oneline)
           fi
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Update CHANGELOG.md
         run: |
@@ -109,12 +101,11 @@ jobs:
 
       - name: Prepare release issue file
         run: |
-          DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
+          DATE=$(date -u +'%Y-%m-%d')
           VERSION=${{ steps.version.outputs.VERSION }}
           AUTHOR=${{ github.actor }}
           REGISTRY="cr.yandex/${{ secrets.CR_ID }}/app:$VERSION"
-          COMMITS="$(cat commits.txt)"
-          
+          COMMITS="${{ steps.commits.outputs.COMMITS }}"
           echo "## Release v$VERSION" > release_info.md
           echo "Date: $DATE" >> release_info.md
           echo "Author: $AUTHOR" >> release_info.md
@@ -123,7 +114,7 @@ jobs:
           echo "" >> release_info.md
           echo "### Commits:" >> release_info.md
           echo "\`\`\`" >> release_info.md
-          echo "$COMMITS" | sed 's/^/- /' >> release_info.md
+          echo "$COMMITS" >> release_info.md
           echo "\`\`\`" >> release_info.md
 
       - name: Create GitHub issue
@@ -133,4 +124,4 @@ jobs:
           content-filepath: release_info.md
 
       - name: Cleanup
-        run: rm release_info.md commits.txt
+        run: rm release_info.md
