@@ -89,7 +89,26 @@ jobs:
           VERSION=${{ steps.version.outputs.VERSION }}
           COMMITS="${{ steps.commits.outputs.COMMITS }}"
           echo -e "## v$VERSION - $DATE\n\n$COMMITS\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+      
+      - name: Get commits between previous and current release tags
+        id: changelog
+        run: |
+          git fetch --tags
 
+          CURRENT_TAG="v${{ steps.version.outputs.VERSION }}"
+          PREVIOUS_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "$CURRENT_TAG" | tail -n 1)
+
+          echo "Current tag: $CURRENT_TAG"
+          echo "Previous tag: $PREVIOUS_TAG"
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous tag found, showing all commits for $CURRENT_TAG"
+            git log $CURRENT_TAG --oneline --no-decorate > commits.txt || echo "No commits found." > commits.txt
+          else
+            echo "Generating log between $PREVIOUS_TAG and $CURRENT_TAG"
+            git log $PREVIOUS_TAG..$CURRENT_TAG --oneline --no-decorate > commits.txt || echo "No commits found." > commits.txt
+          fi
+          
       - name: Commit and push CHANGELOG.md
         run: |
           git config user.name "GitHub Actions"
@@ -99,31 +118,7 @@ jobs:
           git commit -m "chore: update changelog for v${{ steps.version.outputs.VERSION }}"
           git push --set-upstream origin releases/${{ steps.version.outputs.VERSION }}
 
-      - name: Get commits between previous and current release branches
-        id: changelog
-        run: |
-          git fetch origin +refs/heads/*:refs/remotes/origin/*
 
-          VERSION="${RELEASE_VERSION}"
-          CURRENT_RELEASE="origin/releases/${VERSION}"
-
-          # Получаем предыдущую релизную ветку
-          PREVIOUS_RELEASE=$(git branch -r | grep -E 'origin/releases/' | grep -v "$CURRENT_RELEASE" | sort -V | tail -n 1)
-
-          if [ -z "$PREVIOUS_RELEASE" ]; then
-            echo "No previous release found, logging all commits from $CURRENT_RELEASE"
-            git log $CURRENT_RELEASE --oneline --no-decorate > commits.txt || echo "No commits found." > commits.txt
-          else
-            COMMIT_OLD=$(git merge-base origin/main $PREVIOUS_RELEASE)
-            COMMIT_NEW=$(git merge-base origin/main $CURRENT_RELEASE)
-
-            echo "Previous: $PREVIOUS_RELEASE ($COMMIT_OLD)"
-            echo "Current: $CURRENT_RELEASE ($COMMIT_NEW)"
-
-            git log $COMMIT_OLD..$COMMIT_NEW --oneline --no-decorate > commits.txt || echo "No commits found." > commits.txt
-          fi
-        env:
-          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
 
       - name: Prepare release issue file
         run: |
@@ -151,4 +146,4 @@ jobs:
           content-filepath: release_info.md
 
       - name: Cleanup
-        run: rm release_info.md
+        run: rm release_info.md commits.txt
