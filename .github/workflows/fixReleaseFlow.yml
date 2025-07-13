@@ -117,18 +117,35 @@ jobs:
           git tag v${VERSION}_${FIX}
           git push origin v${VERSION}_${FIX}
 
-      - name: Get commits since last release/fix tag
+      - name: Get commits since previous release/fix tag
         id: changelog
         run: |
-          git fetch --tags
+          git fetch --tags --prune --unshallow
 
-          TAGS=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$")
-          CURRENT_TAG=$(echo "$TAGS" | head -n 1)
-          PREVIOUS_TAG=$(echo "$TAGS" | sed -n 2p)
+          VERSION="v${{ env.RELEASE_VERSION }}"
+          CURRENT_FIX="v${{ env.RELEASE_VERSION }}_fix${{ github.run_number }}"
 
-          if [ -n "$PREVIOUS_TAG" ]; then
+          echo "Current fix tag (just created or about to be): $CURRENT_FIX"
+
+          # Получаем все подходящие теги для этой версии (релиз и фиксы)
+          ALL_TAGS=$(git tag | grep -E "^${VERSION}(_fix[0-9]+)?$" | sort -V)
+
+          echo "All matching tags:"
+          echo "$ALL_TAGS"
+
+          # Удаляем текущий (который ещё только создаётся)
+          TAGS_BEFORE=$(echo "$ALL_TAGS" | grep -v "^${CURRENT_FIX}$")
+
+          # Берём предыдущий — последний перед текущим
+          PREVIOUS_TAG=$(echo "$TAGS_BEFORE" | tail -n 1)
+
+          echo "Previous tag: ${PREVIOUS_TAG:-<none>}"
+
+          if [ -n "$PREVIOUS_TAG" ] && git rev-parse "$PREVIOUS_TAG" >/dev/null 2>&1; then
+            echo "Generating git log from $PREVIOUS_TAG to HEAD..."
             git log "$PREVIOUS_TAG"..HEAD --oneline --no-decorate > commits.txt
           else
+            echo "No previous tag found or it does not exist in history."
             echo "No commits" > commits.txt
           fi
       
