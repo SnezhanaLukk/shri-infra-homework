@@ -120,7 +120,7 @@ jobs:
       - name: Get commits since previous release/fix tag
         id: changelog
         run: |
-          git fetch --tags --prune --unshallow
+          git fetch --tags --prune
 
           VERSION="v${{ env.RELEASE_VERSION }}"
           CURRENT_FIX="v${{ env.RELEASE_VERSION }}_fix${{ github.run_number }}"
