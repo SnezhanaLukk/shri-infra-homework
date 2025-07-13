@@ -43,8 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_BRANCH }}
-          fetch-depth: 0 
+          ref: releases/${{ github.event.inputs.release_version }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -56,8 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_BRANCH }}
-          fetch-depth: 0 
+          ref: releases/${{ github.event.inputs.release_version }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -71,8 +69,7 @@ jobs:
       - name: Checkout release branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_BRANCH }}
-          fetch-depth: 0
+          ref: releases/${{ github.event.inputs.release_version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -113,33 +110,25 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Fetch all tags
-        run: git fetch --tags
-
       - name: Create and push git tag
         run: |
           VERSION=${{ env.RELEASE_VERSION }}
           FIX=fix${{ github.run_number }}
-          TAG=v${VERSION}_${FIX}
-          git tag $TAG
-          git push origin $TAG
+          git tag v${VERSION}_${FIX}
+          git push origin v${VERSION}_${FIX}
 
       - name: Get commits since last release/fix tag
         id: changelog
         run: |
-          VERSION=${{ env.RELEASE_VERSION }}
+          git fetch --tags
 
-          MATCHING_TAGS=$(git tag --sort=-creatordate | grep -E "^v${VERSION}(_fix[0-9]+)?$")
+          TAGS=$(git tag --sort=-creatordate | grep -E "^v${{ env.RELEASE_VERSION }}(_fix[0-9]+)?$")
+          CURRENT_TAG=$(echo "$TAGS" | head -n 1)
+          PREVIOUS_TAG=$(echo "$TAGS" | sed -n 2p)
 
-          LAST_TAG=$(echo "$MATCHING_TAGS" | head -n 1)
-
-          echo "Последний релизный/фикс тег: $LAST_TAG"
-          echo "Текущий HEAD: $(git rev-parse HEAD)"
-
-          if [ -n "$LAST_TAG" ]; then
-            git log "$LAST_TAG"..HEAD --oneline --no-decorate > commits.txt
+          if [ -n "$PREVIOUS_TAG" ]; then
+            git log "$PREVIOUS_TAG"..HEAD --oneline --no-decorate > commits.txt
           else
-            echo "Предыдущих тегов не найдено, выводим все коммиты"
             git log --oneline --no-decorate > commits.txt
           fi
       
