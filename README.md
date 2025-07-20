@@ -107,7 +107,7 @@ https://yandex.cloud/ru/docs/compute/quickstart/quick-create-linux#create-vm
 
     - [по ssh запускает Docker-образ на виртуальной машине](https://yandex.cloud/ru/docs/container-registry/tutorials/run-docker-on-vm/console#run)
 
-    - в Issue добавьте комментарий о том, что релиз выкачен в прод c датой и человеком, который запустил выкатку в прод
+    - в Issue добавьте комментарий о том, что релиз выкачен в прод c датой и человеком, который запустил выкатку в прод.
 
 ## Полезные ссылки
 
